@@ -31,10 +31,22 @@ fn main() -> Result<(), Box<dyn Error>> {
         get_remote_commit_sha(&args.git, args.branch.as_deref(), args.tag.as_deref())?;
     let filename = generate_snippet_filename(&commit_sha, &args.path);
 
+    // Create .snippets directory in current directory
+    std::fs::create_dir_all(".snippets")?;
+
+    // Read the source file from temp dir
+    let source_path = temp_dir.path().join(&args.path);
+    let content = std::fs::read_to_string(source_path)?;
+
+    // Save to .snippets directory with generated filename
+    let snippet_path = std::path::Path::new(".snippets").join(&filename);
+    std::fs::write(snippet_path, content)?;
+
     println!("Generated filename: {}", filename);
     println!("Commit SHA: {}", commit_sha);
     println!("Path hash: {}", hash_path(&args.path));
     println!("Repo cloned at: {}", temp_dir.path().display());
+    println!("Snippet saved to: .snippets/{}", filename);
 
     // Prevent temp_dir from being deleted by forgetting it
     std::mem::forget(temp_dir);
@@ -85,6 +97,12 @@ fn get_remote_commit_sha(
 
         reference.peel_to_commit()?.id()
     };
+
+    // Checkout the commit
+    let commit = repo.find_commit(commit_id)?;
+    let tree = commit.tree()?;
+    repo.checkout_tree(tree.as_object(), None)?;
+    repo.set_head_detached(commit_id)?;
 
     Ok((commit_id.to_string(), temp_dir))
 }
