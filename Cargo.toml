@@ -1,0 +1,10 @@
+[package]
+name = "snippet-filename-generator"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+git2 = "0.18"
+sha2 = "0.10"
+tempfile = "3.8"
+clap = { version = "4.4", features = ["derive"] }
