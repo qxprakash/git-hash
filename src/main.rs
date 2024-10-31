@@ -135,8 +135,8 @@ fn get_remote_commit_sha_without_clone(
 
 fn clone_and_checkout_repo(
     git_url: &str,
-    branch: Option<&str>,
-    tag: Option<&str>,
+    _branch: Option<&str>,
+    _tag: Option<&str>,
     commit_sha: &str,
 ) -> Result<tempfile::TempDir, Box<dyn Error>> {
     let temp_dir = tempfile::Builder::new()
@@ -159,9 +159,16 @@ fn clone_and_checkout_repo(
 
     let mut fetch_opts = FetchOptions::new();
     fetch_opts.remote_callbacks(callbacks);
+    fetch_opts.depth(1);
 
     let mut remote = repo.remote_anonymous(git_url)?;
-    remote.fetch(&["refs/*:refs/*"], Some(&mut fetch_opts), None)?;
+
+    // Only fetch the specific commit we need
+    remote.fetch(
+        &[&format!("+{commit_sha}:refs/heads/temp")],
+        Some(&mut fetch_opts),
+        None,
+    )?;
 
     // Checkout the specific commit
     let commit_id = git2::Oid::from_str(commit_sha)?;
