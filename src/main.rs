@@ -108,7 +108,10 @@ impl SnippetFile {
                     .rsplit('-')
                     .next()?
                     .to_string();
-                println!("ℹ️  Extracted commit hash: {}", commit_hash);
+                println!(
+                    "ℹ️  Extracted commit hash from existing file: {}",
+                    commit_hash
+                );
 
                 Some(Self {
                     prefix: prefix.to_string(),
