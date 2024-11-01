@@ -17,22 +17,35 @@ struct Args {
     tag: Option<String>,
 
     #[arg(long)]
+    commit_hash: Option<String>,
+
+    #[arg(long)]
     path: String,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
 
-    if args.branch.is_some() && args.tag.is_some() {
-        return Err("Cannot specify both branch and tag".into());
+    // Validate that only one of branch, tag, or commit_hash is provided
+    let options_count = [
+        args.branch.is_some(),
+        args.tag.is_some(),
+        args.commit_hash.is_some(),
+    ]
+    .iter()
+    .filter(|&&x| x)
+    .count();
+
+    if options_count > 1 {
+        return Err("Only one of --branch, --tag, or --commit_hash can be specified".into());
     }
 
     println!("\n🔍 Fetching commit SHA from remote repository...");
-    let commit_sha = get_remote_commit_sha_without_clone(
-        &args.git,
-        args.branch.as_deref(),
-        args.tag.as_deref(),
-    )?;
+    let commit_sha = if let Some(hash) = args.commit_hash {
+        hash
+    } else {
+        get_remote_commit_sha_without_clone(&args.git, args.branch.as_deref(), args.tag.as_deref())?
+    };
     println!("✅ Found commit SHA: {}", commit_sha);
 
     println!("\n📝 Generating snippet filename...");
@@ -91,7 +104,6 @@ fn get_remote_commit_sha_without_clone(
     branch: Option<&str>,
     tag: Option<&str>,
 ) -> Result<String, Box<dyn Error>> {
-    // Create a temporary directory for the initial fetch
     let temp_dir = tempfile::Builder::new()
         .prefix("docify-temp-")
         .rand_bytes(5)
@@ -100,17 +112,38 @@ fn get_remote_commit_sha_without_clone(
     let repo = Repository::init(temp_dir.path())?;
     let mut remote = repo.remote_anonymous(git_url)?;
 
-    // Fetch only the specific refs we need
+    // First, fetch the remote HEAD to determine default branch
+    println!("ℹ️  Fetching remote references...");
+    remote.connect(git2::Direction::Fetch)?;
+    let default_branch = remote
+        .default_branch()?
+        .as_str()
+        .ok_or("Invalid default branch name")?
+        .to_string();
+    remote.disconnect()?;
+
+    // Convert refs/heads/main to just main
+    let default_branch = default_branch
+        .strip_prefix("refs/heads/")
+        .unwrap_or(&default_branch);
+
+    println!("ℹ️  Default branch: {}", default_branch);
+
+    // Determine which refs to fetch
     let refspecs = if let Some(tag_name) = tag {
         vec![format!("refs/tags/{}:refs/tags/{}", tag_name, tag_name)]
     } else {
-        let branch_name = branch.unwrap_or("HEAD");
+        let branch_name = branch.unwrap_or(default_branch);
         vec![format!(
             "refs/heads/{}:refs/heads/{}",
             branch_name, branch_name
         )]
     };
 
+    println!("ℹ️  Refspecs: {:?}", refspecs);
+
+    // Fetch the required refs
+    println!("ℹ️  Fetching required references...");
     remote.fetch(
         refspecs
             .iter()
@@ -121,11 +154,12 @@ fn get_remote_commit_sha_without_clone(
         None,
     )?;
 
+    // Get the commit ID
     let commit_id = if let Some(tag_name) = tag {
         let tag_ref = repo.find_reference(&format!("refs/tags/{}", tag_name))?;
         tag_ref.peel_to_commit()?.id()
     } else {
-        let branch_name = branch.unwrap_or("HEAD");
+        let branch_name = branch.unwrap_or(default_branch);
         let reference = repo.find_reference(&format!("refs/heads/{}", branch_name))?;
         reference.peel_to_commit()?.id()
     };
