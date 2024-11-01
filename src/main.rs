@@ -57,11 +57,15 @@ impl SnippetFile {
         path: &str,
         commit_sha: &str,
     ) -> Self {
+        println!("\n📝 Creating new SnippetFile...");
+        println!("ℹ️  Input path: {}", path);
+
         let path_buf = PathBuf::from(path);
         let file_name = path_buf
             .file_name()
             .and_then(|f| f.to_str())
             .unwrap_or("unknown");
+        println!("ℹ️  Extracted filename: {}", file_name);
 
         let prefix = format!(
             "{}-{}-{}-{}",
@@ -70,8 +74,10 @@ impl SnippetFile {
             hash_string(path),
             file_name,
         );
+        println!("ℹ️  Generated prefix: {}", prefix);
 
         let full_name = format!("{}-{}.rs", prefix, commit_sha);
+        println!("✅ Created snippet filename: {}", full_name);
 
         Self {
             prefix,
@@ -81,22 +87,28 @@ impl SnippetFile {
     }
 
     fn find_existing(prefix: &str) -> Option<Self> {
+        println!("\n🔍 Looking for existing snippet with prefix: {}", prefix);
+
         let snippets_dir = std::path::Path::new(".snippets");
         if !snippets_dir.exists() {
+            println!("ℹ️  .snippets directory does not exist");
             return None;
         }
 
         fs::read_dir(snippets_dir).ok()?.find_map(|entry| {
             let entry = entry.ok()?;
             let file_name = entry.file_name().to_string_lossy().to_string();
+            println!("ℹ️  Checking file: {}", file_name);
 
             if file_name.starts_with(prefix) {
+                println!("✅ Found matching file!");
                 // Extract commit hash from filename
                 let commit_hash = file_name
                     .strip_suffix(".rs")?
                     .rsplit('-')
                     .next()?
                     .to_string();
+                println!("ℹ️  Extracted commit hash: {}", commit_hash);
 
                 Some(Self {
                     prefix: prefix.to_string(),
