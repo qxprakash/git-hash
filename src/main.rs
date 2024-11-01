@@ -93,8 +93,13 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Generate filename with new format
     println!("\n📝 Generating snippet filename...");
-    let filename =
-        generate_snippet_filename(&args.git, &git_option_type, &git_option_value, &args.path);
+    let filename = generate_snippet_filename(
+        &args.git,
+        &git_option_type,
+        &git_option_value,
+        &args.path,
+        &commit_sha,
+    );
     let snippet_path = std::path::Path::new(".snippets").join(&filename);
     println!("✅ Generated filename: {}", filename);
 
@@ -271,6 +276,7 @@ fn generate_snippet_filename(
     git_option_type: &str,
     git_option_value: &str,
     path: &str,
+    commit_sha: &str,
 ) -> String {
     let path_buf = PathBuf::from(path);
     let file_name = path_buf
@@ -279,11 +285,12 @@ fn generate_snippet_filename(
         .unwrap_or("unknown");
 
     format!(
-        "{}-{}-{}-{}",
+        "{}-{}-{}-{}-{}",
         hash_git_url(git_url),
         hash_git_option(git_option_type, git_option_value),
         hash_string(path),
-        file_name
+        file_name,
+        commit_sha
     )
 }
 
