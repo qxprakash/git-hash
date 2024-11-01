@@ -23,6 +23,23 @@ struct Args {
     path: String,
 }
 
+// Helper functions for consistent hashing
+fn hash_string(input: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(input.as_bytes());
+    format!("{:.8x}", hasher.finalize()) // First 8 chars of hash
+}
+
+fn hash_git_url(url: &str) -> String {
+    println!("ℹ️  Hashing git URL: {}", url);
+    hash_string(url)
+}
+
+fn hash_git_option(option_type: &str, value: &str) -> String {
+    println!("ℹ️  Hashing git option: {}-{}", option_type, value);
+    hash_string(&format!("{}-{}", option_type, value))
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
 
@@ -41,15 +58,43 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     println!("\n🔍 Fetching commit SHA from remote repository...");
-    let commit_sha = if let Some(hash) = args.commit_hash {
-        hash
-    } else {
-        get_remote_commit_sha_without_clone(&args.git, args.branch.as_deref(), args.tag.as_deref())?
-    };
-    println!("✅ Found commit SHA: {}", commit_sha);
 
+    // Determine git option type and value for hashing
+    let (git_option_type, git_option_value, commit_sha) = if let Some(hash) = args.commit_hash {
+        ("commit".to_string(), hash.clone(), hash)
+    } else if let Some(tag) = &args.tag {
+        (
+            "tag".to_string(),
+            tag.clone(),
+            get_remote_commit_sha_without_clone(&args.git, None, Some(tag))?,
+        )
+    } else {
+        // Handle branch case (including default branch)
+        let default_branch = get_default_branch(&args.git)?;
+        let branch_name = args
+            .branch
+            .as_deref()
+            .unwrap_or(&default_branch)
+            .to_string();
+        (
+            "branch".to_string(),
+            branch_name.clone(),
+            get_remote_commit_sha_without_clone(&args.git, Some(&branch_name), None)?,
+        )
+    };
+
+    println!("✅ Found commit SHA: {}", commit_sha);
+    println!("ℹ️  Git URL hash: {}", hash_git_url(&args.git));
+    println!(
+        "ℹ️  Git option hash: {}",
+        hash_git_option(&git_option_type, &git_option_value)
+    );
+    println!("ℹ️  Path hash: {}", hash_string(&args.path));
+
+    // Generate filename with new format
     println!("\n📝 Generating snippet filename...");
-    let filename = generate_snippet_filename(&commit_sha, &args.path);
+    let filename =
+        generate_snippet_filename(&args.git, &git_option_type, &git_option_value, &args.path);
     let snippet_path = std::path::Path::new(".snippets").join(&filename);
     println!("✅ Generated filename: {}", filename);
 
@@ -215,12 +260,18 @@ fn clone_and_checkout_repo(
 }
 
 fn hash_path(path: &str) -> String {
+    println!("ℹ️  Hashing path: {}", path);
     let mut hasher = Sha256::new();
     hasher.update(path.as_bytes());
     format!("{:.8x}", hasher.finalize()) // First 8 chars of hash
 }
 
-fn generate_snippet_filename(commit_sha: &str, path: &str) -> String {
+fn generate_snippet_filename(
+    git_url: &str,
+    git_option_type: &str,
+    git_option_value: &str,
+    path: &str,
+) -> String {
     let path_buf = PathBuf::from(path);
     let file_name = path_buf
         .file_name()
@@ -228,9 +279,34 @@ fn generate_snippet_filename(commit_sha: &str, path: &str) -> String {
         .unwrap_or("unknown");
 
     format!(
-        "{}-{}-{}",
-        &commit_sha[..8], // First 8 chars of commit SHA
-        hash_path(path),  // Hash of full path
-        file_name         // Original filename
+        "{}-{}-{}-{}",
+        hash_git_url(git_url),
+        hash_git_option(git_option_type, git_option_value),
+        hash_string(path),
+        file_name
     )
+}
+
+// Helper function to get default branch
+fn get_default_branch(git_url: &str) -> Result<String, Box<dyn Error>> {
+    let temp_dir = tempfile::Builder::new()
+        .prefix("docify-temp-")
+        .rand_bytes(5)
+        .tempdir()?;
+
+    let repo = Repository::init(temp_dir.path())?;
+    let mut remote = repo.remote_anonymous(git_url)?;
+
+    remote.connect(git2::Direction::Fetch)?;
+    let default_branch = remote
+        .default_branch()?
+        .as_str()
+        .ok_or("Invalid default branch name")?
+        .to_string();
+    remote.disconnect()?;
+
+    Ok(default_branch
+        .strip_prefix("refs/heads/")
+        .unwrap_or(&default_branch)
+        .to_string())
 }

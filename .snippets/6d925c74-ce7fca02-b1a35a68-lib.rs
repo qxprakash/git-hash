@@ -8,5 +8,5 @@ pub fn greet() -> &'static str {
 pub fn example_to_embed() {
     assert_eq!(2 + 2, 4);
     assert_eq!(2 + 3, 5);
-    println!("Example running from first_crate! , latest changes");
+    println!("Example running from first_crate! right now.");
 }
